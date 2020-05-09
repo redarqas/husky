@@ -3,14 +3,14 @@ import Dependencies._
 
 lazy val root = (project in file("."))
   .enablePlugins(BuildInfoPlugin, GitVersioning)
-  .commonSettings("husky")
+  .commonSettings("jsq")
   .settings(
     libraryDependencies ++= mainDeps ++ testDeps,
     buildInfoKeys             := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion, git.baseVersion, git.gitHeadCommit),
-    buildInfoPackage          := "io.redcats.husky",
+    buildInfoPackage          := "io.redcats.jsq",
     buildInfoUsePackageAsPath := true,
     githubOwner               := "redarqas",
-    githubRepository          := "bunny",
+    githubRepository          := "jsq",
     githubTokenSource         := TokenSource.GitConfig("github.token") || TokenSource.Environment("GITHUB_TOKEN"),
     resolvers += Resolver.githubPackages("redarqas")
   )
