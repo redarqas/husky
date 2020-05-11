@@ -18,15 +18,6 @@ object App extends CommandIOApp(name = "jsq", header = "", version = "lastest") 
           .use(_ => IO.unit)
           .as(ExitCode.Success))
 
-  def evaluate(filter: String): IO[Unit] = IO.delay {
-    val string: String = """{ "name":"John", "age":30, "city":"New York"}"""
-    val context        = Context.create()
-    val json           = context.eval("js", s"JSON.parse('$string')")
-    val function       = context.eval("js", s"i => {return JSON.stringify($filter)}")
-    val result         = function.execute(json).toString
-    println(result)
-  }
-
   def contextR: Resource[IO, Context] = Resource.make(IO.delay(Context.create()))(ctx => IO.delay(ctx.close()))
 
   def lines(blocker: Blocker): Stream[IO, String] =
@@ -40,8 +31,9 @@ object App extends CommandIOApp(name = "jsq", header = "", version = "lastest") 
   def eval(context: Context, string: String, filter: String): IO[Option[String]] =
     IO.delay {
         val json     = context.eval("js", s"JSON.parse('$string')")
-        val function = context.eval("js", s"i => {return JSON.stringify($filter)}")
-        function.execute(json).toString.some
+        val function = context.eval("js", s"$filter")
+        val result   = function.execute(json)
+        if (result.isNull) none[String] else result.toString.some
       }
       .handleError(_ => none[String])
 
