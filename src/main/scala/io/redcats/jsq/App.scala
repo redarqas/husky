@@ -13,77 +13,108 @@ import com.monovore.decline.effect._
 
 object App extends CommandIOApp(name = "jsq", header = "", version = "lastest") {
 
-  trait Input {
-    def bytesStream(blocker: Blocker): Stream[IO, Byte]
-  }
-
-  final case class FileInput(paths: NonEmptyList[Path]) extends Input {
-
-    override def bytesStream(blocker: Blocker): Stream[IO, Byte] =
-      paths.reduceMap(p =>
-        fs2.io.readInputStream[IO](blocker.delay[IO, InputStream](Files.newInputStream(p)), 4096, blocker))
-
-  }
-
-  final case object StdInput extends Input {
-
-    override def bytesStream(blocker: Blocker): Stream[IO, Byte] =
-      fs2.io
-        .stdin[IO](4096, blocker)
-  }
-
   override def main: Opts[IO[ExitCode]] = {
-    val filter = Opts
-      .argument[String](metavar = "filter")
-      .map(p => if (Files.exists(Paths.get(p))) new String(Files.readAllBytes(Paths.get(p))) else p)
+    val in: Opts[Input] =
+      Opts.arguments[Path](metavar = "files").orNone.map(_.fold[Input](Input.StdInput)(Input.FileInput))
 
-    val in: Opts[Input] = Opts.arguments[Path](metavar = "files").orNone.map(_.fold[Input](StdInput)(FileInput))
+    val process: Opts[Expression] = Opts
+      .argument[String](metavar = "process")
+      .mapValidated(c => Expression.of("process", c).leftMap(_.getMessage).toValidatedNel)
 
-    (filter, in).mapN {
-      case (filter, in) =>
-        prog(filter, in)
+    val lang: Opts[Language] = Opts
+      .option[String](long = "language", short = "l", help = "process language [js|ruby|python|R]")
+      .withDefault("js")
+      .mapValidated(l => Language.of(l).leftMap(_.getMessage).toValidatedNel)
+
+    val prepare0: Opts[Option[Expression]] = Opts
+      .option[String](
+        long = "prepare",
+        short = "pre",
+        help = "prepare the input to a suitable type for the process action")
+      .mapValidated(c => Expression.of("prepare", c).leftMap(_.getMessage).toValidatedNel)
+      .orNone
+
+    val complete: Opts[Option[Expression]] = Opts
+      .option[String](
+        long = "complete",
+        short = "comp",
+        help = "transform the output of process action to a printable type")
+      .mapValidated(c => Expression.of("complete", c).leftMap(_.getMessage).toValidatedNel)
+      .orNone
+
+    val processor: Opts[Processor[String, Value]] =
+      (lang, prepare0, process, complete).mapN { case (l, pre, pro, comp) => (l, pre, pro, comp) }.mapValidated {
+        case (Language.JS, None, pro, comp) =>
+          Processor
+            .of[String](Language.JS, Expression.StringExp("prepare", "input => JSON.parse(input)").some, pro, comp)
+            .leftMap(_.getMessage)
+            .toValidatedNel
+        case (Language.PYTHON, None, pro, comp) =>
+          Processor
+            .of[String](
+              Language.PYTHON,
+              Expression.StringExp("prepare", "lambda input: json.loads(input)").some,
+              pro,
+              comp)
+            .leftMap(_.getMessage)
+            .toValidatedNel
+        case (Language.RUBY, None, pro, comp) =>
+          Processor
+            .of[String](
+              Language.RUBY,
+              Expression.StringExp("prepare", "-> (input) { JSON.parse(input) }").some,
+              pro,
+              comp)
+            .leftMap(_.getMessage)
+            .toValidatedNel
+        case (l, pre, pro, comp) => Processor.of[String](l, pre, pro, comp).leftMap(_.getMessage).toValidatedNel
+      }
+
+    (processor, in).mapN {
+      case (processor, in) =>
+        prog(processor, in)
           .use(_ => IO.unit)
           .as(ExitCode.Success)
     }
 
   }
 
-  def contextR: Resource[IO, Context] =
-    Resource.make(IO.delay {
-      val ctx = Context.create()
-      ctx.initialize("js")
-      ctx
-    })(ctx => IO.delay(ctx.close()))
-
   def lines(blocker: Blocker, in: Input): Stream[IO, String] =
-    in.bytesStream(blocker)
+    bytesStream(blocker, in)
       .through(text.utf8Decode)
       .through(text.lines)
       .map(_.trim)
       .filter(_.nonEmpty)
 
-  def eval(context: Context, string: String, function: Value): IO[Option[String]] =
-    IO.delay {
-        val json   = context.eval("js", s"JSON.parse('$string')")
-        val result = function.execute(json)
-        if (result.isNull) none[String] else result.toString.some
-      }
-      .handleError(_ => none[String])
+  def all(blocker: Blocker, processor: Processor[String, Value], in: Input): IO[Unit] = {
 
-  def all(blocker: Blocker, filter: String, in: Input): IO[Unit] =
-    Stream
-      .resource(contextR)
-      .evalMap(ctx => blocker.blockOn(IO.delay(ctx.eval("js", s"$filter"))).map(f => (f, ctx)))
-      .flatMap { case (f, ctx) => lines(blocker, in).map(line => (f, ctx, line)) }
-      .evalMap { case (f, ctx, line) => blocker.blockOn(eval(ctx, line, f)) }
+    lines(blocker, in)
+      .evalMap(line =>
+        IO.delay(processor.run(line).leftMap(_.getMessage).map(_.toString).merge).attempt.map(_.toOption))
       .unNone
+      .map(raw => fansi.Color.LightGreen(raw).toString())
       .showLinesStdOut
       .compile
       .drain
+  }
 
-  def prog(filter: String, in: Input): Resource[IO, Unit] =
+  def prog(processor: Processor[String, Value], in: Input): Resource[IO, Unit] =
     for {
-      blocker <- Blocker[IO]
-      _       <- Resource.liftF(all(blocker, filter, in))
+      blocker       <- Blocker[IO]
+      langProcessor <- Resource.make(IO(processor))(p => IO.delay(p.close))
+      _             <- Resource.liftF(all(blocker, langProcessor, in))
+
     } yield ()
+
+  def bytesStream(blocker: Blocker, in: Input): Stream[IO, Byte] = in match {
+    case Input.StdInput =>
+      fs2.io
+        .stdin[IO](bufSize = 4096, blocker = blocker)
+    case Input.FileInput(paths: NonEmptyList[Path]) =>
+      paths.reduceMap(p =>
+        fs2.io.readInputStream[IO](
+          fis = blocker.delay[IO, InputStream](Files.newInputStream(p)),
+          chunkSize = 4096,
+          blocker = blocker))
+  }
 }

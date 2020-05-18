@@ -13,6 +13,7 @@ object Dependencies {
     "com.monovore"    %% "decline-effect" % "1.0.0",
     "co.fs2"          %% "fs2-core"       % "2.2.1",
     "co.fs2"          %% "fs2-io"         % "2.2.1",
+    "com.lihaoyi"     %% "fansi"          % "0.2.7",
     "io.circe"        %% "circe-core"     % circeVersion,
     "io.circe"        %% "circe-parser"   % circeVersion,
     "io.circe"        %% "circe-generic"  % circeVersion
