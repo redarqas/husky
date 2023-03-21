@@ -1,6 +1,6 @@
 ### SQ
 
-Like `jq`, but different. You will be able to use JS to manipulate the json output
+Like `jq`, but different. Transform Json data in a streaming manner using JavaScript
 
 #### How 
 
@@ -13,10 +13,10 @@ Let's start a new implem:
 
 ### Package a native image
 
-Using graalvm, make sure `js` is installed on your graal vm JAVA_HOME:
+Using graalvm, make sure `js` is installed on your graal vm `JAVA_HOME/bin`:
 
 ```
-sc package . --java-home $JAVA_HOME --native-image -o sq \
+scala-cli package . --java-home $JAVA_HOME --native-image -o sq \
     --graalvm-args --no-fallback \
     -- \
       --language:js
@@ -26,11 +26,13 @@ sc package . --java-home $JAVA_HOME --native-image -o sq \
 
 ##### Simple transfomation
 
+- Piping
+
 ```
 tail -f service1.log --files service2.json | sq 'log => log.message'
 ```
 
-OR
+- Files
 
 ```
 sq 'log => log.message' --files service1.log --files service2.json
@@ -70,7 +72,7 @@ sq $transfo --files service1.log --files service2.json
   "coords": [{"lon": 5, "lat": 6}, {"lon": 7, "lat": 8}]
 }
 ```
-Based on the on file above, we can extract latitudes of positions with postive load
+Based on the file above, extract latitudes from postions with a positive load:
 
 ```
 > tail -f f.json | sq 's => { return s.load > 0 ? s.coords:[]}' | sq 'coord => coord.lat'
