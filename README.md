@@ -24,6 +24,8 @@ sc package . --java-home $JAVA_HOME --native-image -o sq \
 
 ### Usage
 
+##### Simple transfomation
+
 ```
 tail -f service1.log --files service2.json | sq 'log => log.message'
 ```
@@ -53,3 +55,25 @@ EOF
 sq $transfo --files service1.log --files service2.json
 ```
 
+##### Advanced transfomation
+
+- Transformation that results on an array is flattened
+- `[]` empty can be used to skip lines
+
+```
+{
+  "load": 0,
+  "coords": [{"lon": 1, "lat": 2}, {"lon": 3, "lat": 4}]
+}
+{
+  "load": 10,
+  "coords": [{"lon": 5, "lat": 6}, {"lon": 7, "lat": 8}]
+}
+```
+Based on the on file above, we can extract latitudes of positions with postive load
+
+```
+> tail -f f.json | sq 's => { return s.load > 0 ? s.coords:[]}' | sq 'coord => coord.lat'
+6
+8
+```
