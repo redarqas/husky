@@ -7,5 +7,7 @@
 //> using lib "com.github.japgolly.scala-graal::ext-boopickle::2.1.0"
 //02-delivery-io
 //> using dep "co.fs2::fs2-io:3.7.0-RC2"
+//> using dep "org.gnieh::fs2-data-json:1.6.1"
+//> using dep "org.gnieh::fs2-data-json-circe:1.6.1"
 //03-main
 //> using dep "com.monovore::decline-effect:2.4.1"

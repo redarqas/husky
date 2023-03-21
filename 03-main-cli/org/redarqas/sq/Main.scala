@@ -16,28 +16,44 @@ object Main
 
   val in: Opts[Input] =
     Opts
-      .argument[Path](metavar = "file")
+      .options[Path](long = "files", short = "fs", help = "files to parse")
       .orNone
       .map(_.fold[Input](Input.StdIn)(Input.FileInput(_)))
 
   val prepare: Opts[String] =
     Opts
-      .argument[String](metavar = "prepare function")
+      .option[String](
+        long = "prepare",
+        short = "prep",
+        help = "prepare function to apply to a chunck"
+      )
       .withDefault("input => JSON.parse(input)")
 
   val transform: Opts[String] =
     Opts
-      .argument[String](metavar = "transform function")
+      .argument[String](
+        metavar = "transform function to apply to a prepared chunck"
+      )
       .withDefault("input => input")
 
   val complete: Opts[String] =
     Opts
-      .argument[String](metavar = "complete function")
-      .withDefault("input => input")
+      .option[String](
+        long = "complete",
+        short = "comp",
+        help = "complete function to apply to a transformed chunck"
+      )
+      .withDefault(
+        """input => JSON.stringify(input, null, 2)"""
+      )
 
   val threads: Opts[Int] =
     Opts
-      .argument[Int](metavar = "number of threads to use")
+      .option[Int](
+        long = "nb-threads",
+        short = "n",
+        help = "number of threads to use"
+      )
       .withDefault(4)
 
   def main: Opts[IO[ExitCode]] =
